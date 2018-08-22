@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="author" content="Mateusz Wasik">
+    <title></title>
+    <link rel="stylesheet" href="node_modules/bootstrap/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="node_modules/@fortawesome/fontawesome-free/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+    <script>if (typeof module === 'object') {window.module = module; module = undefined;}</script>
+    <script src="node_modules/bootstrap/dist/js/bootstrap.min.js"></script>
+    <script src="node_modules/jquery/dist/jquery.min.js"></script>
+    <script src="js/jquery.bxslider.js"></script>
+    <script>if (window.module) module = window.module;</script>
+    <script>
+
+      $(function()
+      {
+        var ip = require('ip');
+        var fs = require('fs-extra');
+        var path = require('path');
+        var uuidv4 = require('uuid/v4');
+        var archiver = require('archiver');
+
+        var images = Array();
+        var config = JSON.parse(fs.readFileSync('config.json'));
+        var images = JSON.parse(fs.readFileSync('images.json'));
+
+        console.log(images);
+
+        function render(f)
+        {
+          var html = '';
+
+          for(var d=0; d<f.length; d++)
+          {
+            html += '<div data-number="' + d + '" class="col-md-6"><div class="row"><div class="col-12"><img class="img-fluid d-block mx-auto" src="' + f[d].src + '" alt=""></div></div><div class="row"><div class="col-12 text-center">' + f[d].original_name + '</div><div class="col-6"><div class="input-group"><div class="input-group-prepend"><span class="input-group-text"><i class="fas fa-stopwatch"></i></span></div><input type="number" min="0" class="form-control duration" value="' + f[d].duration + '" placeholder="0"></div></div><div class="col-6"><div class="input-group"><div class="input-group-prepend"><span class="input-group-text"><i class="fas fa-magic"></i></span></div><select class="form-control transition"><option value="none">No transition</option><option value="">Slide</option><option value="">Fade</option><option value="">Other</option></select></div></div><div class="col-4 text-center"><i class="fas fa-arrow-circle-left fa-5x move-left"></i></div><div class="col-4 text-center"><i class="fas fa-times-circle fa-5x delete"></i></div><div class="col-4 text-center"><i class="fas fa-arrow-circle-right fa-5x move-right"></i></div></div></div>';
+          }
+
+          document.getElementById('images').innerHTML = html;
+        }
+
+        function update_save()
+        {
+          fs.writeFileSync('images.json', JSON.stringify(images));
+        }
+
+        Array.prototype.swap = function (x,y)
+        {
+          var b = this[x];
+          this[x] = this[y];
+          this[y] = b;
+          return this;
+        }
+
+        render(images);
+
+        $('.ip').html(ip.address());
+
+        $('#load').on('click', function()
+        {
+          $('.notice').html('');
+
+          if($('#files').val() == '')
+          {
+            $('.notice').html('No files choosen');
+          }
+          else
+          {
+            var files = document.getElementById('files').files;
+
+            /*fs.readdirSync('tmp').forEach(fl =>
+            {
+              fs.unlinkSync(path.join('tmp', fl));
+            });*/
+
+            for(var i=0; i<files.length; i++)
+            {
+              var filename = uuidv4();
+              filename += path.extname(files[i].name);
+
+              while(fs.existsSync(path.join('tmp', filename)))
+              {
+                filename = uuidv4();
+                filename += path.extname(files[i].name);
+              }
+
+              fs.copySync(files[i].path, path.join('tmp', filename));
+
+              var thing = {
+                original_name: files[i].name,
+                src: path.join(__dirname, 'tmp', filename),
+                duration: 0,
+              };
+
+              images.push(thing);
+            }
+
+            render(images);
+            update_save();
+          }
+        });
+
+        $('#create').on('click', function()
+        {
+          if(images.length == 0)
+          {
+            $('.notice').html('No files choosen');
+          }
+          else
+          {
+            $('#overlay').fadeIn(500);
+
+            var archive = archiver('zip');
+            var output = fs.createWriteStream('packages/package' + config.currentPackage + '.zip');
+
+            output.on('close', function()
+            {
+              console.log(archive.pointer() + ' bytes written');
+            });
+
+            archive.on('error', function(err)
+            {
+              throw err;
+            });
+
+            archive.pipe(output);
+
+            fs.readdirSync('tmp').forEach(fl =>
+            {
+              archive.file(path.join('tmp', fl), {name: fl});
+            });
+
+            archive.append(JSON.stringify(images), {name: 'config.json'});
+
+            archive.finalize();
+
+            config.currentPackage++;
+
+            fs.writeFileSync('config.json', JSON.stringify(config));
+
+            $('#overlay').fadeOut(500);
+          }
+        });
+
+        $(document).on('click', '.move-left', function()
+        {
+          var nr = parseInt(($(this).parent().parent().parent().attr('data-number')));
+
+          if(nr > 0)
+          {
+            images.swap(nr, nr-1);
+            render(images);
+          }
+        });
+
+        $(document).on('click', '.move-right', function()
+        {
+          var nr = parseInt(($(this).parent().parent().parent().attr('data-number')));
+
+          if(nr < images.length-1)
+          {
+            images.swap(nr, nr+1);
+            render(images);
+          }
+        });
+
+        $(document).on('click', '.delete', function()
+        {
+          var nr = parseInt(($(this).parent().parent().parent().attr('data-number')));
+
+          fs.unlinkSync(images[nr].src);
+          images.splice(nr, 1);
+          update_save();
+          render(images);
+        });
+
+        $(document).on('keyup', '.duration', function()
+        {
+          var nr = parseInt(($(this).parent().parent().parent().parent().attr('data-number')));
+
+          images[nr].duration = $(this).val();
+        });
+      });
+
+    </script>
+  </head>
+  <body>
+    <div class="container-fluid">
+      <div id="overlay"></div>
+      <div class="row">
+        <div class="col-md-3">
+          <div class="ip"></div>
+        </div>
+        <div class="col-md-3">
+          <input id="files" type="file" class="form-control-file" multiple accept=".jpg, .jpeg, .png, .svg, .">
+        </div>
+        <div class="col-md-3">
+          <button id="load" type="button" class="btn btn-primary" name="button">Load files</button><br>
+          <span class="notice"></span>
+        </div>
+      </div>
+      <div id="images" class="row"></div>
+      <div class="row">
+        <div class="col-12 text-right">
+          <button id="create" type="button" class="btn btn-primary">Create package</button>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
