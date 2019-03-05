@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="author" content="Mateusz Wasik">
+    <title></title>
+    <link rel="stylesheet" href="node_modules/bootstrap/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="node_modules/@fortawesome/fontawesome-free/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+    <script>if (typeof module === 'object') {window.module = module; module = undefined;}</script>
+    <!--<script src="node_modules/bootstrap/dist/js/bootstrap.min.js"></script>-->
+    <script src="node_modules/jquery/dist/jquery.min.js"></script>
+    <script src="js/jquery.bxslider.js"></script>
+    <script>if (window.module) module = window.module;</script>
+    <script>
+
+      $(function()
+      {
+        var request = require('request');
+        var fs = require('fs-extra');
+        var path = require('path');
+        var unzipper = require('unzipper');
+
+        var timeout;
+
+        setInterval(function()
+        {
+          var current = fs.readFileSync('current');
+
+          var ip = $('#ip').val();
+          var regex = new RegExp('^(?:(?:2(?:[0-4][0-9]|5[0-5])|[0-1]?[0-9]?[0-9])\.){3}(?:(?:2([0-4][0-9]|5[0-5])|[0-1]?[0-9]?[0-9]))$');
+
+          if(regex.test(ip))
+          {
+            $('.notice').html('');
+
+            var url = 'http://' + ip + ':8080/current-version';
+
+            request(
+            {
+              url: url,
+              json: true,
+            }, function(error, res, body)
+            {
+              if(!error)
+              {
+                if(body.currentPackage - 1 > current)
+                {
+                  clearTimeout(timeout);
+
+                  var fileUrl = 'http://' + ip + ':8080/download?version=' + parseInt(body.currentPackage - 1);
+
+                  request(
+                  {
+                    url: fileUrl,
+                    encoding: null
+                  }, function(err, resp, bd)
+                  {
+                    if(err) throw err;
+
+                    fs.writeFileSync('package.zip', bd);
+
+                    fs.readdirSync('tmp').forEach(file =>
+                    {
+                      fs.unlinkSync(path.join('tmp', file));
+                    });
+
+                    fs.createReadStream('package.zip')
+                    .pipe(unzipper.Extract({path: 'tmp'})
+                    .on('close', function()
+                    {
+                      render(JSON.parse(fs.readFileSync(path.join('tmp', 'config.json'))));
+                      $('.notice').html('Files loaded');
+                      $('#start').prop('disabled', false);
+                      fs.writeFileSync('current', body.currentPackage - 1);
+                      $('#start').click();
+                    }));
+                  });
+                }
+              }
+              else
+              {
+                console.log(error);
+              }
+            });
+          }
+          else
+          {
+            $('.notice').html('Incorrect IP address');
+          }
+        }, 300000);
+
+        function render(x)
+        {
+          var html = '';
+
+          for(var i=0; i<x.length; i++)
+          {
+            html += '<div class="sl" data-duration="' + x[i].duration + '"style="background-size: ' + x[i].sizing + ';background-image: url(\'' + path.join('tmp', path.basename(x[i].src)) + '\')"></div>';
+          }
+
+          document.getElementById('slides').innerHTML = html;
+        }
+
+        $('#connect').on('click', function()
+        {
+          var ip = $('#ip').val();
+          var regex = new RegExp('^(?:(?:2(?:[0-4][0-9]|5[0-5])|[0-1]?[0-9]?[0-9])\.){3}(?:(?:2([0-4][0-9]|5[0-5])|[0-1]?[0-9]?[0-9]))$');
+
+          if(regex.test(ip))
+          {
+            $('.notice').html('');
+
+            var url = 'http://' + ip + ':8080/current-version';
+
+            request(
+            {
+              url: url,
+              json: true,
+            }, function(error, res, body)
+            {
+              if(!error)
+              {
+                var fileUrl = 'http://' + ip + ':8080/download?version=' + parseInt(body.currentPackage - 1);
+
+                request(
+                {
+                  url: fileUrl,
+                  encoding: null
+                }, function(err, resp, bd)
+                {
+                  if(err) throw err;
+
+                  fs.writeFileSync('package.zip', bd);
+
+                  fs.readdirSync('tmp').forEach(file =>
+                  {
+                    fs.unlinkSync(path.join('tmp', file));
+                  });
+
+                  fs.createReadStream('package.zip')
+                  .pipe(unzipper.Extract({path: 'tmp'})
+                  .on('close', function()
+                  {
+                    render(JSON.parse(fs.readFileSync(path.join('tmp', 'config.json'))));
+                    $('.notice').html('Files loaded');
+                    $('#start').prop('disabled', false);
+                    fs.writeFileSync('current', body.currentPackage - 1);
+                  }));
+                });
+              }
+              else
+              {
+                console.log(error);
+              }
+            });
+          }
+          else
+          {
+            $('.notice').html('Incorrect IP address');
+          }
+        });
+
+        $('#start').on('click', function()
+        {
+          var images = JSON.parse(fs.readFileSync(path.join('tmp', 'config.json')));
+
+          $('#start').prop('disabled', true);
+          $('#stop').prop('disabled', false);
+          $('#connect').prop('disabled', true);
+
+          var slideIndex = 0;
+          showSlides();
+
+          function showSlides()
+          {
+            var i;
+            var slides = document.getElementsByClassName('sl');
+            for (i = 0; i < slides.length; i++)
+            {
+              slides[i].style.display = 'none';
+            }
+
+            slideIndex++;
+            if (slideIndex > slides.length) {slideIndex = 1}
+            slides[slideIndex-1].style.display = 'block';
+            timeout = setTimeout(showSlides, slides[slideIndex-1].dataset.duration*1000); // Change image every 2 seconds
+          }
+        });
+
+        $('#stop').on('click', function()
+        {
+          $('#start').prop('disabled', false);
+          $('#stop').prop('disabled', true);
+          $('#connect').prop('disabled', false);
+          clearTimeout(timeout);
+        });
+
+        $(document).on('keyup', function(e)
+        {
+          if(e.keyCode == 27)
+          {
+            if($('#menubar').css('opacity') == '1')
+            {
+              $('#menubar').css('opacity', '0');
+            }
+            else
+            {
+              $('#menubar').css('opacity', '1');
+            }
+          }
+        });
+      });
+
+    </script>
+  </head>
+  <body>
+    <div id="menubar" class="container-fluid">
+      <div class="row p-3">
+        <div class="col-2">
+          <input id="ip" type="text" class="form-control" placeholder="Host IP">
+        </div>
+        <div class="col-3">
+          <button id="connect" type="button" class="btn btn-primary">Connect</button>
+          <span class="notice"></span>
+        </div>
+        <div class="col-3">
+          <button id="start" type="button" disabled class="btn btn-primary">Start</button>
+        </div>
+        <div class="col-3">
+          <button id="stop" type="button" disabled class="btn btn-primary">Stop</button>
+        </div>
+      </div>
+    </div>
+    <div id="slides">
+    </div>
+  </body>
+</html>

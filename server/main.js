@@ -46,11 +46,13 @@ http.createServer(function(req, res)
     res.writeHead(200, {'Content-Type': 'application/json'});
     res.write(fs.readFileSync('config.json'));
     res.end();
+    console.log('got a request');
   }
   else if(q.pathname == '/download')
   {
     var f_content = fs.readFileSync(path.join('packages', 'package' + q.query.version + '.zip'));
     res.setHeader('Content-disposition', 'attachment; filename=' + 'package' + q.query.version + '.zip');
     res.end(f_content);
+    console.log('got a request');
   }
 }).listen(8080);
